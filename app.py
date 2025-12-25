@@ -25,7 +25,7 @@ st.set_page_config(page_title="AI Career & College Guidance", layout="wide")
 st.title("🎓 AI-Powered EAPCET College & Branch Recommendation System")
 st.markdown(
     "This system recommends **B.Tech colleges and branches** based on "
-    "EAPCET rank, category, gender, and region, along with **chance of admission**."
+    "EAPCET rank, category, gender, and region, along with **admission suitability**."
 )
 
 st.sidebar.header("🔎 Enter Your Details")
@@ -42,8 +42,10 @@ user_gender = st.sidebar.selectbox(
     "Gender", sorted(df["gender"].unique())
 )
 
+# Region selection (NON-LOCAL handled logically)
 user_region = st.sidebar.selectbox(
-    "Region", sorted(df["A_REG"].dropna().unique())
+    "Region",
+    ["AU", "SVU", "NON-LOCAL"]
 )
 
 top_n = st.sidebar.slider(
@@ -51,15 +53,28 @@ top_n = st.sidebar.slider(
 )
 
 # ----------------------------
+# HYBRID SUITABILITY LOGIC
+# ----------------------------
+def calculate_suitability(user_rank, cutoff_rank, max_gap=60000):
+    """
+    Suitability score based on rank proximity.
+    Indicates recommendation strength, not guarantee.
+    """
+
+    rank_gap = cutoff_rank - user_rank
+
+    # Not eligible
+    if rank_gap < 0:
+        return 0.0
+
+    gap_ratio = min(rank_gap / max_gap, 1)
+    suitability = 85 * (1 - gap_ratio) + 15
+
+    return round(min(max(suitability, 5), 95), 2)
+
+# ----------------------------
 # CORE RECOMMENDATION LOGIC
 # ----------------------------
-def predict_probability(cutoff_rank):
-    """
-    ML-based probability prediction
-    """
-    prob = model.predict_proba(np.array([[cutoff_rank]]))[0][1]
-    return round(prob * 100, 1)
-
 def recommend_colleges(
     df, user_rank, user_category, user_gender, user_region, top_n
 ):
@@ -69,40 +84,44 @@ def recommend_colleges(
         (df["cutoff_rank"] >= user_rank)
     ].copy()
 
-    # Region filter
-    eligible = eligible[eligible["A_REG"] == user_region]
+    # NON-LOCAL logic
+    if user_region != "NON-LOCAL":
+        eligible = eligible[eligible["A_REG"] == user_region]
 
     if eligible.empty:
         return pd.DataFrame()
 
-    # Rank gap (relevance)
     eligible["rank_gap"] = eligible["cutoff_rank"] - user_rank
 
-    # Remove very far colleges (keeps results realistic)
+    # Keep realistic range
     eligible = eligible[eligible["rank_gap"] <= 30000]
 
     if eligible.empty:
         return pd.DataFrame()
 
-    # ML-based probability
-    eligible["chance_percent"] = eligible["cutoff_rank"].apply(
-        predict_probability
+    eligible["Suitability %"] = eligible["cutoff_rank"].apply(
+        lambda c: calculate_suitability(user_rank, c)
     )
 
-    # Sort by closeness to rank
     result = eligible.sort_values(
-        by="rank_gap", ascending=True
+        by=["Suitability %", "rank_gap"],
+        ascending=[False, True]
     ).head(top_n)
 
-    return result[
+    # ❌ COLLEGE FEE REMOVED
+    result = result[
         [
             "NAME OF THE INSTITUTION",
             "branch_code",
-            "COLLFEE",
             "cutoff_rank",
-            "chance_percent"
+            "Suitability %"
         ]
     ]
+
+    # Clean index for proper column display
+    result.reset_index(drop=True, inplace=True)
+
+    return result
 
 # ----------------------------
 # RUN PREDICTION
@@ -126,12 +145,21 @@ if st.sidebar.button("🚀 Get Recommendations"):
             st.success("✅ Recommended Colleges & Branches")
             st.dataframe(result, use_container_width=True)
 
+            # ---- CLARITY NOTES ----
             st.markdown(
                 """
-                **Note:**  
-                *Chance % is estimated using a machine learning model trained on historical cutoff data.*  
-                *Final seat allotment depends on counselling rounds and official rules.*
+                ℹ️ **Note:**  
+                **Suitability %** indicates how well a college matches your rank based on past trends.  
+                Lower values **do not mean rejection**, but indicate **lower preference or competitiveness**.
                 """
+            )
+
+            st.info(
+                "📌 **How to read Suitability %**\n"
+                "• **80–100%** → ⭐ Very strong & competitive match\n"
+                "• **50–80%** → ✅ Good and realistic option\n"
+                "• **20–50%** → ⚠️ Safe option, but lower preference\n"
+                "• **Below 20%** → ❗ Last-option colleges"
             )
 
 # ----------------------------
