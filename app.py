@@ -10,29 +10,26 @@ import joblib
 def load_data():
     return pd.read_csv("apeamcet_long_clean.csv")
 
-@st.cache_resource
-def load_model():
-    return joblib.load("best_seat_prediction_model.pkl")
-
 df = load_data()
-model = load_model()
 
 # ----------------------------
-# STREAMLIT UI
+# STREAMLIT UI CONFIG
 # ----------------------------
 st.set_page_config(page_title="AI Career & College Guidance", layout="wide")
 
 st.title("🎓 AI-Powered EAPCET College & Branch Recommendation System")
+
 st.markdown(
-    "This system recommends **B.Tech colleges and branches** based on "
-    "EAPCET rank, category, gender, and region, along with **admission suitability**."
+    "This application helps students explore **B.Tech colleges and branches** using "
+    "historical EAPCET cutoff data and intelligent suitability scoring."
 )
 
-st.sidebar.header("🔎 Enter Your Details")
+# ----------------------------
+# SIDEBAR INPUTS
+# ----------------------------
+st.sidebar.header("🔎 Student Details")
 
-user_rank = st.sidebar.number_input(
-    "EAPCET Rank", min_value=1, step=1
-)
+user_rank = st.sidebar.number_input("EAPCET Rank", min_value=1, step=1)
 
 user_category = st.sidebar.selectbox(
     "Category", sorted(df["category"].unique())
@@ -42,10 +39,13 @@ user_gender = st.sidebar.selectbox(
     "Gender", sorted(df["gender"].unique())
 )
 
-# Region selection (NON-LOCAL handled logically)
 user_region = st.sidebar.selectbox(
-    "Region",
-    ["AU", "SVU", "NON-LOCAL"]
+    "Region", ["AU", "SVU", "NON-LOCAL"]
+)
+
+preferred_district = st.sidebar.selectbox(
+    "Preferred District (Optional)",
+    ["All"] + sorted(df["DIST"].dropna().unique())
 )
 
 top_n = st.sidebar.slider(
@@ -53,47 +53,46 @@ top_n = st.sidebar.slider(
 )
 
 # ----------------------------
-# HYBRID SUITABILITY LOGIC
+# SUITABILITY LOGIC
 # ----------------------------
 def calculate_suitability(user_rank, cutoff_rank, max_gap=60000):
-    """
-    Suitability score based on rank proximity.
-    Indicates recommendation strength, not guarantee.
-    """
-
     rank_gap = cutoff_rank - user_rank
-
-    # Not eligible
     if rank_gap < 0:
         return 0.0
-
     gap_ratio = min(rank_gap / max_gap, 1)
     suitability = 85 * (1 - gap_ratio) + 15
-
     return round(min(max(suitability, 5), 95), 2)
 
+def classify_risk(rank_gap):
+    if rank_gap <= 2000:
+        return "🎯 Ambitious"
+    elif rank_gap <= 10000:
+        return "⚖️ Moderate"
+    else:
+        return "✅ Safe"
+
 # ----------------------------
-# CORE RECOMMENDATION LOGIC
+# GENERAL RECOMMENDATION FUNCTION
 # ----------------------------
-def recommend_colleges(
-    df, user_rank, user_category, user_gender, user_region, top_n
-):
+def recommend_colleges():
     eligible = df[
         (df["category"] == user_category) &
         (df["gender"] == user_gender) &
         (df["cutoff_rank"] >= user_rank)
     ].copy()
 
-    # NON-LOCAL logic
+    # Region handling
     if user_region != "NON-LOCAL":
         eligible = eligible[eligible["A_REG"] == user_region]
+
+    # District filter
+    if preferred_district != "All":
+        eligible = eligible[eligible["DIST"] == preferred_district]
 
     if eligible.empty:
         return pd.DataFrame()
 
     eligible["rank_gap"] = eligible["cutoff_rank"] - user_rank
-
-    # Keep realistic range
     eligible = eligible[eligible["rank_gap"] <= 30000]
 
     if eligible.empty:
@@ -103,69 +102,115 @@ def recommend_colleges(
         lambda c: calculate_suitability(user_rank, c)
     )
 
+    eligible["College Type"] = eligible["rank_gap"].apply(classify_risk)
+
     result = eligible.sort_values(
         by=["Suitability %", "rank_gap"],
         ascending=[False, True]
     ).head(top_n)
 
-    # ❌ COLLEGE FEE REMOVED
     result = result[
         [
             "NAME OF THE INSTITUTION",
             "branch_code",
+            "DIST",
             "cutoff_rank",
-            "Suitability %"
+            "Suitability %",
+            "College Type"
         ]
     ]
 
-    # Clean index for proper column display
     result.reset_index(drop=True, inplace=True)
-
     return result
 
 # ----------------------------
-# RUN PREDICTION
+# ASPIRATION COLLEGE CHECK
 # ----------------------------
-if st.sidebar.button("🚀 Get Recommendations"):
-    if user_rank <= 0:
-        st.warning("Please enter a valid rank.")
-    else:
-        result = recommend_colleges(
-            df,
-            user_rank,
-            user_category,
-            user_gender,
-            user_region,
-            top_n
-        )
+def check_specific_college(college, branch):
+    filtered = df[
+        (df["NAME OF THE INSTITUTION"] == college) &
+        (df["branch_code"] == branch) &
+        (df["category"] == user_category) &
+        (df["gender"] == user_gender)
+    ]
 
-        if result.empty:
-            st.error("No colleges found for the given inputs.")
+    if user_region != "NON-LOCAL":
+        filtered = filtered[filtered["A_REG"] == user_region]
+
+    if filtered.empty:
+        return None
+
+    cutoff = filtered["cutoff_rank"].values[0]
+    rank_gap = cutoff - user_rank
+    suitability = calculate_suitability(user_rank, cutoff)
+    risk = classify_risk(max(rank_gap, 0))
+
+    return {
+        "College": college,
+        "Branch": branch,
+        "Cutoff Rank": cutoff,
+        "Suitability %": suitability,
+        "College Type": risk
+    }
+
+# ----------------------------
+# MAIN PAGE TABS
+# ----------------------------
+tab1, tab2 = st.tabs(["📋 College Recommendations", "🎯 Aspiration College Check"])
+
+# ----------------------------
+# TAB 1: GENERAL RECOMMENDATIONS
+# ----------------------------
+with tab1:
+    if st.button("🚀 Get College Recommendations"):
+        if user_rank <= 0:
+            st.warning("Please enter a valid rank.")
         else:
-            st.success("✅ Recommended Colleges & Branches")
-            st.dataframe(result, use_container_width=True)
+            result = recommend_colleges()
+            if result.empty:
+                st.error("No colleges found for the given inputs.")
+            else:
+                st.success("✅ Recommended Colleges & Branches")
+                st.dataframe(result, use_container_width=True)
 
-            # ---- CLARITY NOTES ----
-            st.markdown(
-                """
-                ℹ️ **Note:**  
-                **Suitability %** indicates how well a college matches your rank based on past trends.  
-                Lower values **do not mean rejection**, but indicate **lower preference or competitiveness**.
-                """
-            )
+                st.info(
+                    "📌 **How to read Suitability %**\n"
+                    "• 80–100% → ⭐ Very strong & competitive match\n"
+                    "• 50–80% → ✅ Good and realistic option\n"
+                    "• 20–50% → ⚖️ Safe option, lower preference\n"
+                    "• Below 20% → ❗ Last-option colleges"
+                )
 
-            st.info(
-                "📌 **How to read Suitability %**\n"
-                "• **80–100%** → ⭐ Very strong & competitive match\n"
-                "• **50–80%** → ✅ Good and realistic option\n"
-                "• **20–50%** → ⚠️ Safe option, but lower preference\n"
-                "• **Below 20%** → ❗ Last-option colleges"
-            )
+# ----------------------------
+# TAB 2: ASPIRATION COLLEGE CHECK
+# ----------------------------
+with tab2:
+    st.subheader("🎯 Check Your Chances for a Specific College")
+
+    selected_college = st.selectbox(
+        "Select College",
+        sorted(df["NAME OF THE INSTITUTION"].unique())
+    )
+
+    selected_branch = st.selectbox(
+        "Select Branch",
+        sorted(
+            df[df["NAME OF THE INSTITUTION"] == selected_college]["branch_code"].unique()
+        )
+    )
+
+    if st.button("🔍 Check This College"):
+        result = check_specific_college(selected_college, selected_branch)
+        if result is None:
+            st.error("No data found for this combination.")
+        else:
+            st.success("📊 Admission Feasibility Result")
+            st.json(result)
 
 # ----------------------------
 # FOOTER
 # ----------------------------
 st.markdown("---")
 st.markdown(
-    "📌 *Developed as part of an AI-based Career & College Guidance System project.*"
+    "📌 *AI-Powered Career & College Guidance System – Final Year Project*"
 )
