@@ -112,14 +112,14 @@ def recommend_colleges():
     ).head(top_n)
 
     result = result[
-        [
-            "NAME OF THE INSTITUTION",
-            "branch_code",
-            "DIST",
-            "cutoff_rank",
-            "Suitability %",
-            "College Type"
-        ]
+       [
+ "NAME OF THE INSTITUTION",
+ "branch_code",
+ "cutoff_rank",
+ "Demand_Level",
+ "suitability_percent"
+]
+
     ]
 
     result.reset_index(drop=True, inplace=True)
