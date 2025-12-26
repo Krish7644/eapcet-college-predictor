@@ -236,6 +236,3 @@ with tab2:
 # FOOTER
 # ----------------------------
 st.markdown("---")
-st.markdown(
-    "📌 *AI-Powered Career & College Guidance System – Final Year Project*"
-)
