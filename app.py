@@ -7,7 +7,7 @@ import numpy as np
 # ----------------------------
 @st.cache_data
 def load_data():
-    return pd.read_csv("apeamcet_long_with_demand.csv")
+    return pd.read_csv("apeamcet_long_with_demand.xls")
 
 df = load_data()
 
