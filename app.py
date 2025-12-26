@@ -107,11 +107,11 @@ def recommend_colleges():
     eligible["College Type"] = eligible["rank_gap"].apply(classify_risk)
 
     result = eligible.sort_values(
-        by=["Suitability %", "rank_gap"],
-        ascending=[False, True]
+    by=["Suitability %", "rank_gap"],
+    ascending=[False, True]
     ).head(top_n)
 
-   result = result[
+    result = result[
       [
         "NAME OF THE INSTITUTION",
         "branch_code",
@@ -119,7 +119,8 @@ def recommend_colleges():
         "Demand_Level",
         "Suitability %"
       ]
-  ]
+    ]
+
 
 
     result.reset_index(drop=True, inplace=True)
