@@ -142,16 +142,26 @@ def check_specific_college(college, branch):
 
     cutoff = filtered["cutoff_rank"].values[0]
     rank_gap = cutoff - user_rank
-    suitability = calculate_suitability(user_rank, cutoff)
+
+    if rank_gap < 0:
+        suitability = 8.0  # Very low but not harsh zero
+        remark = "❌ Very low chance based on last year's cutoff"
+    else:
+        suitability = calculate_suitability(user_rank, cutoff)
+        remark = "✅ Possible based on historical cutoff"
+
     risk = classify_risk(max(rank_gap, 0))
 
     return {
         "College": college,
         "Branch": branch,
-        "Cutoff Rank": cutoff,
+        "Last Year Cutoff Rank": cutoff,
+        "Your Rank": user_rank,
         "Suitability %": suitability,
+        "Assessment": remark,
         "College Type": risk
     }
+
 
 # ----------------------------
 # MAIN PAGE TABS
@@ -205,7 +215,13 @@ with tab2:
             st.error("No data found for this combination.")
         else:
             st.success("📊 Admission Feasibility Result")
-            st.json(result)
+           st.markdown("### 📊 Admission Feasibility Result")
+
+st.table(pd.DataFrame({
+    "Parameter": result.keys(),
+    "Value": result.values()
+}))
+
 
 # ----------------------------
 # FOOTER
