@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
 
 # ----------------------------
-# LOAD ARTIFACTS
+# LOAD DATA
 # ----------------------------
 @st.cache_data
 def load_data():
@@ -12,8 +11,11 @@ def load_data():
 
 df = load_data()
 
+# Create display-friendly college name (College + District)
+df["college_display"] = df["NAME OF THE INSTITUTION"] + " (" + df["DIST"] + ")"
+
 # ----------------------------
-# STREAMLIT UI CONFIG
+# STREAMLIT CONFIG
 # ----------------------------
 st.set_page_config(page_title="AI Career & College Guidance", layout="wide")
 
@@ -53,7 +55,7 @@ top_n = st.sidebar.slider(
 )
 
 # ----------------------------
-# SUITABILITY LOGIC
+# SUITABILITY & RISK LOGIC
 # ----------------------------
 def calculate_suitability(user_rank, cutoff_rank, max_gap=60000):
     rank_gap = cutoff_rank - user_rank
@@ -81,7 +83,7 @@ def recommend_colleges():
         (df["cutoff_rank"] >= user_rank)
     ].copy()
 
-    # Region handling
+    # Region logic
     if user_region != "NON-LOCAL":
         eligible = eligible[eligible["A_REG"] == user_region]
 
@@ -126,9 +128,9 @@ def recommend_colleges():
 # ----------------------------
 # ASPIRATION COLLEGE CHECK
 # ----------------------------
-def check_specific_college(college, branch):
+def check_specific_college(college_name, branch):
     filtered = df[
-        (df["NAME OF THE INSTITUTION"] == college) &
+        (df["NAME OF THE INSTITUTION"] == college_name) &
         (df["branch_code"] == branch) &
         (df["category"] == user_category) &
         (df["gender"] == user_gender)
@@ -144,7 +146,7 @@ def check_specific_college(college, branch):
     rank_gap = cutoff - user_rank
 
     if rank_gap < 0:
-        suitability = 8.0  # Very low but not harsh zero
+        suitability = 8.0
         remark = "❌ Very low chance based on last year's cutoff"
     else:
         suitability = calculate_suitability(user_rank, cutoff)
@@ -153,8 +155,9 @@ def check_specific_college(college, branch):
     risk = classify_risk(max(rank_gap, 0))
 
     return {
-        "College": college,
+        "College": college_name,
         "Branch": branch,
+        "District": filtered["DIST"].values[0],
         "Last Year Cutoff Rank": cutoff,
         "Your Rank": user_rank,
         "Suitability %": suitability,
@@ -162,9 +165,8 @@ def check_specific_college(college, branch):
         "College Type": risk
     }
 
-
 # ----------------------------
-# MAIN PAGE TABS
+# MAIN TABS
 # ----------------------------
 tab1, tab2 = st.tabs(["📋 College Recommendations", "🎯 Aspiration College Check"])
 
@@ -197,31 +199,38 @@ with tab1:
 with tab2:
     st.subheader("🎯 Check Your Chances for a Specific College")
 
-    selected_college = st.selectbox(
+    selected_college_display = st.selectbox(
         "Select College",
-        sorted(df["NAME OF THE INSTITUTION"].unique())
+        sorted(df["college_display"].unique())
+    )
+
+    # Extract actual college name
+    selected_college = selected_college_display.rsplit(" (", 1)[0]
+
+    available_branches = sorted(
+        df[df["NAME OF THE INSTITUTION"] == selected_college]["branch_code"].unique()
     )
 
     selected_branch = st.selectbox(
         "Select Branch",
-        sorted(
-            df[df["NAME OF THE INSTITUTION"] == selected_college]["branch_code"].unique()
-        )
+        available_branches
     )
 
     if st.button("🔍 Check This College"):
         result = check_specific_college(selected_college, selected_branch)
+
         if result is None:
-            st.error("No data found for this combination.")
+            st.warning(
+                "⚠️ This college–branch–category combination was not allotted "
+                "in the previous counselling data. Please try another branch or category."
+            )
         else:
             st.success("📊 Admission Feasibility Result")
-           st.markdown("### 📊 Admission Feasibility Result")
 
-st.table(pd.DataFrame({
-    "Parameter": result.keys(),
-    "Value": result.values()
-}))
-
+            st.table(pd.DataFrame({
+                "Parameter": result.keys(),
+                "Value": result.values()
+            }))
 
 # ----------------------------
 # FOOTER
