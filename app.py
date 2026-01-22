@@ -76,51 +76,56 @@ def classify_risk(rank_gap):
 # ----------------------------
 # GENERAL RECOMMENDATION FUNCTION
 # ----------------------------
-def recommend_colleges():
+def recommend_colleges(
+    df,
+    user_rank,
+    user_category,
+    user_gender,
+    user_region,
+    top_n
+):
+    # 1. Filter eligible rows
     eligible = df[
         (df["category"] == user_category) &
         (df["gender"] == user_gender) &
         (df["cutoff_rank"] >= user_rank)
     ].copy()
 
-    # Region logic
+    # 2. Region filter
     if user_region != "NON-LOCAL":
         eligible = eligible[eligible["A_REG"] == user_region]
 
-    # District filter
-    if preferred_district != "All":
-        eligible = eligible[eligible["DIST"] == preferred_district]
-
     if eligible.empty:
         return pd.DataFrame()
 
+    # 3. Rank gap
     eligible["rank_gap"] = eligible["cutoff_rank"] - user_rank
-    eligible = eligible[eligible["rank_gap"] <= 30000]
 
-    if eligible.empty:
-        return pd.DataFrame()
+    # 4. Suitability score (rule-based)
+    MAX_GAP = 50000
+    eligible["suitability_percent"] = (
+        (1 - eligible["rank_gap"] / MAX_GAP) * 100
+    ).clip(10, 95).round(1)
 
-    eligible["Suitability %"] = eligible["cutoff_rank"].apply(
-        lambda c: calculate_suitability(user_rank, c)
-    )
-
-    eligible["College Type"] = eligible["rank_gap"].apply(classify_risk)
-
+    # 5. Sort results
     result = eligible.sort_values(
-        by=["Suitability %", "rank_gap"],
+        by=["suitability_percent", "rank_gap"],
         ascending=[False, True]
     ).head(top_n)
 
+    # 6. Select output columns
     result = result[
         [
             "NAME OF THE INSTITUTION",
             "branch_code",
-            "DIST",
             "cutoff_rank",
-            "Suitability %",
-            "College Type"
+            "Demand_Level",
+            "suitability_percent"
         ]
     ]
+
+    return result
+
 
     result.reset_index(drop=True, inplace=True)
     return result
