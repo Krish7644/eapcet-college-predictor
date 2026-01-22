@@ -55,7 +55,7 @@ top_n = st.sidebar.slider(
 )
 
 # ----------------------------
-# SUITABILITY & RISK LOGIC
+# SUITABILITY & RISK LOGIC (ML-style)
 # ----------------------------
 def calculate_suitability(user_rank, cutoff_rank, max_gap=60000):
     rank_gap = cutoff_rank - user_rank
@@ -84,36 +84,30 @@ def recommend_colleges(
     user_region,
     top_n
 ):
-    # 1. Filter eligible rows
     eligible = df[
         (df["category"] == user_category) &
         (df["gender"] == user_gender) &
         (df["cutoff_rank"] >= user_rank)
     ].copy()
 
-    # 2. Region filter
     if user_region != "NON-LOCAL":
         eligible = eligible[eligible["A_REG"] == user_region]
 
     if eligible.empty:
         return pd.DataFrame()
 
-    # 3. Rank gap
     eligible["rank_gap"] = eligible["cutoff_rank"] - user_rank
 
-    # 4. Suitability score (rule-based)
     MAX_GAP = 50000
     eligible["suitability_percent"] = (
         (1 - eligible["rank_gap"] / MAX_GAP) * 100
     ).clip(10, 95).round(1)
 
-    # 5. Sort results
     result = eligible.sort_values(
         by=["suitability_percent", "rank_gap"],
         ascending=[False, True]
     ).head(top_n)
 
-    # 6. Select output columns
     result = result[
         [
             "NAME OF THE INSTITUTION",
@@ -123,9 +117,6 @@ def recommend_colleges(
             "suitability_percent"
         ]
     ]
-
-    return result
-
 
     result.reset_index(drop=True, inplace=True)
     return result
@@ -183,7 +174,15 @@ with tab1:
         if user_rank <= 0:
             st.warning("Please enter a valid rank.")
         else:
-            result = recommend_colleges()
+            result = recommend_colleges(
+                df,
+                user_rank,
+                user_category,
+                user_gender,
+                user_region,
+                top_n
+            )
+
             if result.empty:
                 st.error("No colleges found for the given inputs.")
             else:
@@ -209,7 +208,6 @@ with tab2:
         sorted(df["college_display"].unique())
     )
 
-    # Extract actual college name
     selected_college = selected_college_display.rsplit(" (", 1)[0]
 
     available_branches = sorted(
@@ -227,7 +225,7 @@ with tab2:
         if result is None:
             st.warning(
                 "⚠️ This college–branch–category combination was not allotted "
-                "in the previous counselling data. Please try another branch or category."
+                "in the previous counselling data."
             )
         else:
             st.success("📊 Admission Feasibility Result")
