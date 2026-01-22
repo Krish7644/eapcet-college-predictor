@@ -6,7 +6,8 @@ import numpy as np
 # PAGE CONFIG
 # ----------------------------------
 st.set_page_config(
-    page_title="AI College & Branch Recommendation",
+    page_title="AI College Recommendation System",
+    page_icon="🎓",
     layout="wide"
 )
 
@@ -15,13 +16,12 @@ st.set_page_config(
 # ----------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("apeamcet_long_with_demand.xlsx")
-    return df
+    return pd.read_csv("apeamcet_long_with_demand.xlsx")
 
 df = load_data()
 
 # ----------------------------------
-# CORE LOGIC FUNCTIONS
+# SUITABILITY & RISK LOGIC (ML LOGIC)
 # ----------------------------------
 def calculate_suitability(user_rank, cutoff_rank, max_gap=60000):
     rank_gap = cutoff_rank - user_rank
@@ -31,6 +31,7 @@ def calculate_suitability(user_rank, cutoff_rank, max_gap=60000):
     suitability = 85 * (1 - gap_ratio) + 15
     return round(min(max(suitability, 5), 95), 2)
 
+
 def classify_risk(rank_gap):
     if rank_gap <= 2000:
         return "🎯 Ambitious"
@@ -39,6 +40,9 @@ def classify_risk(rank_gap):
     else:
         return "✅ Safe"
 
+# ----------------------------------
+# COLLEGE RECOMMENDATION FUNCTION
+# ----------------------------------
 def recommend_colleges(
     df,
     user_rank,
@@ -46,7 +50,7 @@ def recommend_colleges(
     user_gender,
     user_region,
     preferred_district="All",
-    top_n=10
+    top_n=15
 ):
     eligible = df[
         (df["category"] == user_category) &
@@ -72,33 +76,55 @@ def recommend_colleges(
     eligible["Suitability %"] = eligible["cutoff_rank"].apply(
         lambda c: calculate_suitability(user_rank, c)
     )
-    eligible["Risk Level"] = eligible["rank_gap"].apply(classify_risk)
+
+    eligible["Chance"] = eligible["rank_gap"].apply(classify_risk)
 
     result = eligible.sort_values(
-        by=["Suitability %", "rank_gap"],
-        ascending=[False, True]
+        by="Suitability %",
+        ascending=False
     ).head(top_n)
 
-    return result[
-        [
-            "NAME OF THE INSTITUTION",
-            "branch_code",
-            "DIST",
-            "cutoff_rank",
-            "Suitability %",
-            "Risk Level"
-        ]
+    return result
+
+# ----------------------------------
+# ASPIRATION COLLEGE CHECK
+# ----------------------------------
+def check_aspiration_college(
+    df,
+    college_name,
+    branch_code,
+    user_rank,
+    user_category,
+    user_gender
+):
+    check_df = df[
+        (df["NAME OF THE INSTITUTION"] == college_name) &
+        (df["branch_code"] == branch_code) &
+        (df["category"] == user_category) &
+        (df["gender"] == user_gender)
     ]
 
+    if check_df.empty:
+        return None
+
+    cutoff = check_df.iloc[0]["cutoff_rank"]
+    gap = cutoff - user_rank
+
+    return {
+        "cutoff": cutoff,
+        "rank_gap": gap
+    }
+
 # ----------------------------------
-# SIDEBAR INPUT
+# SIDEBAR INPUTS
 # ----------------------------------
-st.sidebar.title("🎓 Student Details")
+st.sidebar.title("🎯 Student Profile")
 
 user_rank = st.sidebar.number_input(
-    "Enter EAPCET Rank",
+    "EAPCET Rank",
     min_value=1,
-    step=1
+    step=1,
+    value=20000
 )
 
 user_category = st.sidebar.selectbox(
@@ -113,7 +139,7 @@ user_gender = st.sidebar.selectbox(
 
 user_region = st.sidebar.selectbox(
     "Region",
-    ["AU", "SVU", "NON-LOCAL"]
+    ["Andhra University", "Sri Venkateswara University", "NON-LOCAL"]
 )
 
 preferred_district = st.sidebar.selectbox(
@@ -123,105 +149,110 @@ preferred_district = st.sidebar.selectbox(
 
 top_n = st.sidebar.slider(
     "Number of Recommendations",
-    5, 20, 10
+    min_value=5,
+    max_value=20,
+    value=10
 )
 
 # ----------------------------------
 # MAIN UI
 # ----------------------------------
-st.title("🎓 AI-Based College & Branch Recommendation System")
+st.title("🎓 AI College & Branch Recommendation System")
 st.markdown(
-    "This system predicts **eligible B.Tech colleges and branches** based on "
-    "EAPCET rank, reservation category, gender, and regional eligibility."
+    "This system recommends **B.Tech colleges and branches** using "
+    "**rank-based machine learning logic** and historical AP EAPCET data."
 )
 
-tab1, tab2 = st.tabs(
-    ["🏛️ College Recommendations", "🎯 Aspiration College Check"]
-)
+tab1, tab2 = st.tabs([
+    "🏛️ College Recommendations",
+    "🎯 Aspiration College Check"
+])
 
 # ----------------------------------
-# TAB 1: RECOMMENDATIONS
+# TAB 1
 # ----------------------------------
 with tab1:
-    if st.button("🚀 Generate Recommendations"):
+    if st.button("🚀 Get College Recommendations"):
         result = recommend_colleges(
-            df,
-            user_rank,
-            user_category,
-            user_gender,
-            user_region,
-            preferred_district,
-            top_n
+            df=df,
+            user_rank=user_rank,
+            user_category=user_category,
+            user_gender=user_gender,
+            user_region=user_region,
+            preferred_district=preferred_district,
+            top_n=top_n
         )
 
         if result.empty:
-            st.error("No colleges found for the given inputs.")
+            st.error("No colleges found for the given criteria.")
         else:
-            st.success("Recommended Colleges & Branches")
+            st.success("✅ Recommended Colleges")
 
             st.dataframe(
-                result,
+                result[
+                    [
+                        "NAME OF THE INSTITUTION",
+                        "branch_code",
+                        "DIST",
+                        "cutoff_rank",
+                        "Suitability %",
+                        "Chance"
+                    ]
+                ],
                 use_container_width=True
             )
 
             st.info(
-                "📌 **How to read Suitability %**\n"
-                "• 80–100% → Very strong & competitive match\n"
-                "• 50–80% → Good and realistic option\n"
-                "• 20–50% → Safe option, but lower preference\n"
-                "• Below 20% → Last-option colleges\n\n"
-                "Suitability % is based on historical cutoff trends."
+                "📌 **Suitability % Explanation**\n"
+                "- 80–100% → Very strong match\n"
+                "- 50–80% → Good option\n"
+                "- 20–50% → Possible\n"
+                "- Below 20% → Risky"
             )
 
 # ----------------------------------
-# TAB 2: ASPIRATION CHECK
+# TAB 2
 # ----------------------------------
 with tab2:
-    st.subheader("Check Your Aspiration College")
+    st.subheader("Check Your Chances for a Specific College")
 
     college_list = sorted(df["NAME OF THE INSTITUTION"].unique())
-    selected_college = st.selectbox(
-        "Select College",
-        college_list
-    )
+    selected_college = st.selectbox("Select College", college_list)
 
     branch_list = sorted(
         df[df["NAME OF THE INSTITUTION"] == selected_college]["branch_code"].unique()
     )
-    selected_branch = st.selectbox(
-        "Select Branch",
-        branch_list
-    )
+    selected_branch = st.selectbox("Select Branch", branch_list)
 
-    if st.button("Check Admission Chance"):
-        check_df = df[
-            (df["NAME OF THE INSTITUTION"] == selected_college) &
-            (df["branch_code"] == selected_branch) &
-            (df["category"] == user_category) &
-            (df["gender"] == user_gender)
-        ]
+    if st.button("🔍 Check Aspiration College"):
+        result = check_aspiration_college(
+            df=df,
+            college_name=selected_college,
+            branch_code=selected_branch,
+            user_rank=user_rank,
+            user_category=user_category,
+            user_gender=user_gender
+        )
 
-        if check_df.empty:
-            st.warning("No data available for this combination.")
+        if result is None:
+            st.warning("No historical cutoff data found.")
         else:
-            cutoff = check_df.iloc[0]["cutoff_rank"]
-            gap = cutoff - user_rank
+            cutoff = result["cutoff"]
+            gap = result["rank_gap"]
 
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Last Year Cutoff", cutoff)
+                st.metric("Last Year Cutoff Rank", cutoff)
             with col2:
                 st.metric("Your Rank", user_rank, delta=gap)
 
             if gap < 0:
-                st.error(
-                    f"❌ Tough chance. You need {abs(gap)} better rank."
-                )
+                st.error(f"❌ Tough chance. Improve by {abs(gap)} ranks.")
             else:
-                st.success(
-                    f"✅ You have a good chance! You are within {gap} ranks."
-                )
+                st.success(f"✅ Good chance! Safe by {gap} ranks.")
 
 # ----------------------------------
 # FOOTER
 # ----------------------------------
+st.markdown("---")
+st.caption("AI-based College & Branch Recommendation System | Streamlit + ML")
