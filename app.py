@@ -18,6 +18,7 @@ st.set_page_config(
 def load_data():
     return pd.read_excel("apeamcet_long_with_demand.xlsx")
 
+
 df = load_data()
 
 # ----------------------------------
