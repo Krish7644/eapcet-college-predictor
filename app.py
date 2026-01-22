@@ -16,7 +16,7 @@ st.set_page_config(
 # ----------------------------------
 @st.cache_data
 def load_data():
-    return pd.read_excel("apeamcet_long_with_demand.xls", engine="xlrd")
+    return pd.read_csv("apeamcet_long_with_demand.csv")
 
 
 df = load_data()
