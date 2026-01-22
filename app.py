@@ -15,7 +15,7 @@ st.set_page_config(
 # ----------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("apeamcet_long_with_demand.csv")
+    df = pd.read_csv("apeamcet_long_with_demand.xlsx")
     return df
 
 df = load_data()
